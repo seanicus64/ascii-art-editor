@@ -76,12 +76,23 @@ class Main:
                     underline = 0
                 elif p == 4:
                     underline = curses.A_UNDERLINE
-                elif p == 22:
+                elif p == 21:
                     bold = 0
+                    self.screen.addstr(str(p))
                 elif p == 1:
                     bold = curses.A_BOLD
                 elif p == 27:
+                    reverse = 0
+                elif p == 7:
                     reverse = curses.A_REVERSE
+                elif p == 0:
+                    reverse = 0
+                    bold = 0
+                    underline = 0
+                    fg = 0
+                    bg = 0
+                elif p != 0:
+                    self.screen.addstr(str(p))
     def iimport(self, filename):
         self.screen.move(0,0)
         with open(filename) as f:
@@ -364,7 +375,7 @@ class Main:
         with open("output", "w") as f:
             for y in range(self.height):
                 line = ""
-                oldattrs = [24,22,27,130,140]
+                oldattrs = [24,21,27,130,140]
                 for x in range(self.width):
                     inchar = self.canvas.inch(y, x)
                     char = inchar & 255
@@ -382,7 +393,7 @@ class Main:
                     if is_bold:
                         attrs.append(1)
                     else:
-                        attrs.append(22)
+                        attrs.append(21)
                     if is_reverse:
                         attrs.append(7)
                     else:
@@ -390,7 +401,7 @@ class Main:
                     attrs.append(30+fg)
                     attrs.append(40+bg)
                     if inchar == 32:
-                        attrs = [24,22,27,30,40]
+                        attrs = [24,21,27,30,40]
                     attrs_to_write = []
                     for a in attrs:
                         if a not in oldattrs:
