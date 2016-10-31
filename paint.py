@@ -2,13 +2,16 @@
 import curses
 from curses import wrapper
 import locale
+import os
+import getopt
+import sys
+import string
 locale.setlocale(locale.LC_ALL, '')
 code = locale.getpreferredencoding()
                 
 class Main:
-    def __init__(self, screen):
+    def __init__(self, screen, load=False, new=False):
         self.screen = screen
-        #curses.use_default_colors()
         self.init_colors()
         self.height = 40
         self.width = 80
@@ -27,6 +30,8 @@ class Main:
         self.resize()
         self.refresh_canvas()
 
+        if load: self.iimport(load)
+
         self.draw_border()
         self.screen.refresh()
         self.mainloop()
@@ -42,124 +47,95 @@ class Main:
         self.draw_border()
         self.refresh_canvas()
         self.screen.refresh()
-    def iimport(self):
-        self.screen.move(0,0)
-        with open("output2") as f:
-            data = f.readlines()
-        longest = len(max(data, key=len))
-        self.width = longest
-        self.height = len(data)
-        self.canvas = curses.newpad(self.height, self.width)
-        allstrings = []
-        allescapes = []
-        allcolors = []
-        escape = "0"
-        for el, line in enumerate(data):
-            #line = line.strip("\n")
-            string = ""
-            i = 0
-            colordata = ""
-            while True:
-                try: ch = line[i]
-                except IndexError: break
-                if ord(ch) == 27:
-                    i += 1
-                    if line[i] == "[":
-                        i+= 1
-                        csi = ""
-                        sgr = False
-                        while True:
-                            nextch = line[i]
-                            if nextch == "m": 
-                                sgr = True
-
-                                break
-                            elif nextch.lower() in \
-                                "abcdefghijklmnopqrstuvwxyz":
-                                sgr = False
-                                break
-                            csi += nextch
-                            i += 1
-                        if sgr:
-                            allescapes.append(repr(csi))
-                            escape = csi
-                else:
-                    colordata += escape + "#"
-                    string += ch
-                i += 1
-
-            allstrings.append(string)
-            allcolors.append(colordata)
-        self.screen.refresh()
+    def convert_to_attr(self):
         fg = 0
         bg = 0
-        underline = False
-        reverse = False
-        bold = False # 1
-        self.refresh_canvas()
+        underline = 0
+        reverse = 0
+        bold = 0
+        attr = 0
+        while True:
+            color = (bg * curses.COLORS) + fg
+            attr = underline | bold | reverse | curses.color_pair(color)
+            code = yield attr
+            if code == None: 
+
+                continue
+            parts = code.split(";")
+            for p in parts:
+                p = p.lstrip("[")
+                if not p.isdigit(): 
+                    continue
+                p = int(p)
+                if int(p / 10) == 3:
+                    fg = p % 10
+
+                elif int(p / 10) == 4:
+                    bg = p % 10
+                elif p == 24:
+                    underline = 0
+                elif p == 4:
+                    underline = curses.A_UNDERLINE
+                elif p == 22:
+                    bold = 0
+                elif p == 1:
+                    bold = curses.A_BOLD
+                elif p == 27:
+                    reverse = curses.A_REVERSE
+    def iimport(self, filename):
         self.screen.move(0,0)
-        for el, l in enumerate(allcolors):
-            words = l.split("#")
-            for ew, w in enumerate(words):
-                attrs = []
-                parts = w.split(";")
-                for p in parts:
-                    try:
-                        p = int(p)
-                    except: continue
-                    if int(p/10) == 3:
-                        fg = p % 10
-
-                    elif int(p/10) == 4:
-                        bg = p % 10
-
-                    elif p == 24:
-                        underline = 0
-                    elif p == 4:
-                        underline = curses.A_UNDERLINE
-                    elif p == 22:
-                        bold = 0
-                    elif p == 1:
-                        bold = curses.A_BOLD
-                    elif p == 27:
-                        reverse = 0
-                    elif p == 7:
-                        reverse = curses.A_REVERSE
-                color = (bg * curses.COLORS) + fg
-                attr = underline | bold | reverse | curses.color_pair(color)
-                to_print_attr = attr
-
-                if ew >= self.width: continue
-                try: ch = allstrings[el][ew]
-                except: 
-                    ch = " "
-                    to_print_attr = 0
-                    
-              
-                try: self.canvas.addstr( ch, to_print_attr)
-                except: continue
-            self.screen.refresh()
-        self.canvas.move(0, 0)
+        with open(filename) as f:
+            data = f.readlines()
+        self.height = len(data)
+        temp_width = max([len(x) for x in data])
+        temp_pad = curses.newpad(self.height, temp_width)
+        attr_gen = self.convert_to_attr()
+        attr = next(attr_gen)
+        line_lengths = []
+        y = 0
+        for line in data:
+            line = line.strip("\n")
+            length = 0
+            line = iter(line)
+            temp_pad.move(y, 0)
+            for char in line:
+                if ord(char) == 27:
+                   code = self.grab_escape_sequence(line)
+                   attr_gen.send(code)
+                   attr = next(attr_gen)
+                   continue
+                length += 1
+                try: 
+                    temp_pad.addch(char, attr)
+                except: break
+            line_lengths.append(length)
+            y += 1
+        self.width = max(line_lengths)
+        self.screen.addstr(0, 0, str(self.width) + "      ")
+        self.canvas = curses.newpad(self.height, self.width)
+        temp_pad.overlay(self.canvas)
+        del temp_pad
 
 
+        self.refresh_canvas()
+    def grab_escape_sequence(self, iterator):
+        is_csi = False
+        is_sgr = False
+        for char in iterator:
 
-                    
-                    
-
-
-
-#            escape = False
-#            string = ""
-#            escape_str = ""
-#            for char in line:
-#                if escape:
-#                    escape_str += char
-#                    if char != "[" and len(escape_str) != 1:
-#                        escape_str = ""
-#                        escape = False
-#                        
-#                if ord(char) == 27:
-#                    escape = True
+            if not is_csi and char == "[":
+                is_csi = True
+                code = ""
+            if not is_csi:
+                break
+            if char.lower() in string.ascii_lowercase:
+                if char == "m":
+                    is_sgr = True
+                break
+            code += char
+        if is_csi and is_sgr:
+            return code
+        return False
 
     def copy(self):
         win = curses.newwin(self.cont_bottom, self.cont_right, self.cont_top-1, self.cont_left-1)
@@ -435,8 +411,26 @@ class Main:
 
                     
 
-def main(screen):
-    screen = Main(screen)
+def main(screen, load, new):
+    screen = Main(screen, load, new)
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    opts, args = getopt.getopt(sys.argv[1:], "")
+    if len(args) > 1:
+        print("Must edit only one file at a time.")
+        sys.exit(1)
+    elif len(args) == 1:
+        load = False
+        new = False
+        filename = args[0]
+        if os.path.exists(filename):
+            print("File exists!")
+            load = filename
+        else:
+            print("File does not exist.")
+            new = filename
+    else:
+        load = False
+        new = True
+    curses.wrapper(main, load=load, new=new)
+
